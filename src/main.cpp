@@ -31,17 +31,13 @@ enum class BackendType
   IFL   // Incremental fixed lag smoother
 };
 
-constexpr BackendType backend_type = BackendType::LM;
+constexpr BackendType backend_type = BackendType::ISAM;
 
 std::shared_ptr<gtsam::PreintegratedCombinedMeasurements> preint;
 gtsam::NonlinearFactorGraph graph;
 gtsam::Values initial;
 gtsam::ISAM2 isam;
 gtsam::IncrementalFixedLagSmoother ifl;
-
-bool skip_first_for_lm = true;
-bool skip_first_for_isam = true;
-bool skip_first_for_ifl = true;
 
 gtsam::FixedLagSmootherKeyTimestampMap key_timestamp_map;
 
@@ -111,7 +107,7 @@ void imuCallback(const sensor_msgs::Imu::ConstPtr msg)
   }
 }
 
-void extPosCallback(double timestamp, const gtsam::Point3 *ext_pos, const gtsam::Rot3 *ext_rot)
+void processExtPose(double timestamp, const gtsam::Point3 *ext_pos, const gtsam::Rot3 *ext_rot)
 {
   if (imu_meas_since_last_optim_count == 0)
   {
@@ -126,21 +122,36 @@ void extPosCallback(double timestamp, const gtsam::Point3 *ext_pos, const gtsam:
     prev_ext_pos_timestamp = timestamp;
     prev_ext_pos = *ext_pos;
 
+    auto velocity_noise_model = gtsam::noiseModel::Isotropic::Sigma(3, 0.1); // m/s
+    auto bias_noise_model = gtsam::noiseModel::Isotropic::Sigma(6, 1e-3);
+
+    // zero priors for velocity and bias
+    gtsam::Vector3 prior_vel;
+    gtsam::imuBias::ConstantBias prior_bias;
+
     if (ext_rot)
     {
       gtsam::Pose3 prior(*ext_rot, *ext_pos);
-      graph.addPrior(X(ext_count), prior, ext_pose_noise);
 
-      prev_state = gtsam::NavState(prior, gtsam::Vector3::Zero());
-      prev_bias = gtsam::imuBias::ConstantBias(gtsam::Vector6::Zero());
+      // IMPORTANT to add initial priors on velocity and bias to make the problem
+      // well constrained and not run into indeterminant linear system exceptions.
+      graph.addPrior(X(ext_count), prior, ext_pose_noise);
+      graph.addPrior(V(ext_count), prior_vel, velocity_noise_model);
+      graph.addPrior(B(ext_count), prior_bias, bias_noise_model);
+
+      prev_state = gtsam::NavState(prior, prior_vel);
+      prev_bias = gtsam::imuBias::ConstantBias(prior_bias);
     }
     else
     {
       gtsam::PartialPriorFactor<gtsam::Pose3> prior_factor(X(ext_count), {3, 4, 5}, *ext_pos, ext_pos_noise);
       graph.add(prior_factor);
 
-      prev_state = gtsam::NavState(gtsam::Pose3(gtsam::Rot3::identity(), *ext_pos), gtsam::Vector3::Zero());
-      prev_bias = gtsam::imuBias::ConstantBias(gtsam::Vector6::Zero());
+      graph.addPrior(V(ext_count), prior_vel, velocity_noise_model);
+      graph.addPrior(B(ext_count), prior_bias, bias_noise_model);
+
+      prev_state = gtsam::NavState(gtsam::Pose3(gtsam::Rot3::identity(), *ext_pos), prior_vel);
+      prev_bias = prior_bias;
     }
 
     initial.insert(X(ext_count), prev_state.pose());
@@ -150,6 +161,22 @@ void extPosCallback(double timestamp, const gtsam::Point3 *ext_pos, const gtsam:
     key_timestamp_map.insert({X(ext_count), timestamp});
     key_timestamp_map.insert({V(ext_count), timestamp});
     key_timestamp_map.insert({B(ext_count), timestamp});
+
+    isam.update(graph, initial);
+
+    graph.resize(0);
+    initial.clear();
+
+    gtsam::Pose3 x = isam.calculateEstimate<gtsam::Pose3>(X(ext_count));
+    gtsam::Vector3 v = isam.calculateEstimate<gtsam::Vector3>(V(ext_count));
+    gtsam::imuBias::ConstantBias b = isam.calculateEstimate<gtsam::imuBias::ConstantBias>(B(ext_count));
+
+    prev_state = gtsam::NavState(x, v);
+    prev_bias = b;
+
+    // need to reset preintegration because the very first state x1 is set to be
+    // at where-ever it is when the priors are added
+    preint->resetIntegrationAndSetBias(prev_bias);
 
     std::cout << "First ever ext pos, add prior and initial values" << std::endl;
     return;
@@ -189,20 +216,14 @@ void extPosCallback(double timestamp, const gtsam::Point3 *ext_pos, const gtsam:
 
   // PRINT
   // graph.print("FACTOR GRAPH: ");
+  // isam.getFactorsUnsafe().print("CURRENT ISAM FACTORS: ");
+  // graph.print("GRAGH TO ADD TO ISAM: ");
   // initial.print("INITIAL VALUES: ");
 
   // OPTIMIZE
   std::shared_ptr<gtsam::Marginals> marginals = nullptr;
   if (backend_type == BackendType::LM)
   {
-    if (skip_first_for_lm)
-    {
-      // Need to skip first for LM so avoid IndeterminantLinearSystem when
-      // computing marginals.
-      skip_first_for_lm = false;
-      return;
-    }
-
     gtsam::LevenbergMarquardtParams param;
     param.setVerbosityLM("SUMMARY");
     gtsam::LevenbergMarquardtOptimizer optimizer(graph, initial, param);
@@ -218,16 +239,8 @@ void extPosCallback(double timestamp, const gtsam::Point3 *ext_pos, const gtsam:
   }
   else if (backend_type == BackendType::ISAM)
   {
-    if (skip_first_for_isam)
-    {
-      // This is apparently needed when using iSAM so it doesn't throw a
-      // IndeterminantLinearSystemException on the first optimization.
-      skip_first_for_isam = false;
-      return;
-    }
-
     isam.update(graph, initial);
-    isam.update();
+    isam.update(); // Not strictly needed
 
     graph.resize(0);
     initial.clear();
@@ -241,12 +254,6 @@ void extPosCallback(double timestamp, const gtsam::Point3 *ext_pos, const gtsam:
   }
   else if (backend_type == BackendType::IFL)
   {
-    if (skip_first_for_ifl)
-    {
-      skip_first_for_ifl = false;
-      return;
-    }
-
     ifl.update(graph, initial, key_timestamp_map);
     ifl.update();
 
@@ -301,7 +308,7 @@ void leicaCallback(const geometry_msgs::PointStamped::ConstPtr msg)
   double timestamp = msg->header.stamp.toSec();
   gtsam::Point3 ext_pos(msg->point.x, msg->point.y, msg->point.z);
 
-  extPosCallback(timestamp, &ext_pos, nullptr);
+  processExtPose(timestamp, &ext_pos, nullptr);
 }
 
 void viconCallback(const geometry_msgs::TransformStamped::ConstPtr msg)
@@ -310,14 +317,14 @@ void viconCallback(const geometry_msgs::TransformStamped::ConstPtr msg)
   count++;
   std::cout << "Got Vicon measurement " << count << std::endl;
   // only process every 5 message since vicon runs at 100 hz instead of 20 hz (like leica)
-  if (count % 5)
+  if (count % 5 == 0)
   {
     double timestamp = msg->header.stamp.toSec();
     gtsam::Quaternion quat(msg->transform.rotation.w, msg->transform.rotation.x, msg->transform.rotation.y, msg->transform.rotation.z);
     gtsam::Rot3 ext_rot(quat);
     gtsam::Point3 ext_pos(msg->transform.translation.x, msg->transform.translation.y, msg->transform.translation.z);
 
-    extPosCallback(timestamp, &ext_pos, &ext_rot);
+    processExtPose(timestamp, &ext_pos, &ext_rot);
   }
 }
 
@@ -327,7 +334,7 @@ int main(int argc, char **argv)
   ros::NodeHandle nh;
 
   // auto p = boost::make_shared<gtsam::PreintegrationCombinedParams>(gtsam::Vector3(0, 0, -9.81));
-  auto p = gtsam::PreintegrationCombinedParams::MakeSharedU();
+  auto p = gtsam::PreintegrationCombinedParams::MakeSharedU(9.8082);
   // p->accelerometerCovariance = gtsam::I_3x3 * 0.008 * 0.008;
   // p->gyroscopeCovariance = gtsam::I_3x3 * 0.0012 * 0.0012;
   // p->biasAccCovariance = gtsam::I_3x3 * 0.1 * 0.1;
