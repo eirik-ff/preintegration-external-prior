@@ -279,7 +279,7 @@ void extPosCallback(double timestamp, const gtsam::Point3 *ext_pos, const gtsam:
             << "  vel = " << prev_state.velocity().transpose() << std::endl;
   if (marginals)
   {
-    std::cout << "Std for pos: " << marginals->marginalCovariance(X(ext_count)).diagonal().cwiseSqrt().transpose() << std::endl;
+    std::cout << "Std for pose: " << marginals->marginalCovariance(X(ext_count)).diagonal().cwiseSqrt().transpose() << std::endl;
     std::cout << "Std for vel: " << marginals->marginalCovariance(V(ext_count)).diagonal().cwiseSqrt().transpose() << std::endl;
   }
   std::cout << "Error against external prior: \n"
@@ -288,7 +288,9 @@ void extPosCallback(double timestamp, const gtsam::Point3 *ext_pos, const gtsam:
   {
     std::cout << "  rot = " << ext_rot->between(prev_state.attitude()).rpy().transpose() << std::endl;
   }
-  std::cout << "Bias: " << prev_bias << std::endl;
+  std::cout << "Bias: \n"
+            << "  acc = " << prev_bias.accelerometer().transpose() << "\n"
+            << "  gyr = " << prev_bias.gyroscope().transpose() << std::endl;
   if (marginals)
     std::cout << "Std for bias: " << marginals->marginalCovariance(B(ext_count)).diagonal().cwiseSqrt().transpose() << std::endl;
   std::cout << "--------------------" << std::endl;
