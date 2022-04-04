@@ -31,7 +31,7 @@ enum class BackendType
   IFL   // Incremental fixed lag smoother
 };
 
-constexpr BackendType backend_type = BackendType::IFL;
+constexpr BackendType backend_type = BackendType::LM;
 
 std::shared_ptr<gtsam::PreintegratedCombinedMeasurements> preint;
 gtsam::NonlinearFactorGraph graph;
@@ -39,6 +39,7 @@ gtsam::Values initial;
 gtsam::ISAM2 isam;
 gtsam::IncrementalFixedLagSmoother ifl;
 
+bool skip_first_for_lm = true;
 bool skip_first_for_isam = true;
 bool skip_first_for_ifl = true;
 
@@ -191,13 +192,23 @@ void extPosCallback(double timestamp, const gtsam::Point3 *ext_pos, const gtsam:
   // initial.print("INITIAL VALUES: ");
 
   // OPTIMIZE
+  std::shared_ptr<gtsam::Marginals> marginals = nullptr;
   if (backend_type == BackendType::LM)
   {
+    if (skip_first_for_lm)
+    {
+      // Need to skip first for LM so avoid IndeterminantLinearSystem when
+      // computing marginals.
+      skip_first_for_lm = false;
+      return;
+    }
+
     gtsam::LevenbergMarquardtParams param;
     param.setVerbosityLM("SUMMARY");
     gtsam::LevenbergMarquardtOptimizer optimizer(graph, initial, param);
     gtsam::Values result = optimizer.optimize();
     // gtsam::Marginals marginals(graph, result);
+    marginals = std::make_shared<gtsam::Marginals>(graph, result);
     std::cout << std::endl;
     initial.update(result);
 
@@ -266,10 +277,11 @@ void extPosCallback(double timestamp, const gtsam::Point3 *ext_pos, const gtsam:
             << "  pos = " << prev_state.pose().translation().transpose() << "\n"
             << "  rot = " << prev_state.attitude().rpy().transpose() << "\n"
             << "  vel = " << prev_state.velocity().transpose() << std::endl;
-  // std::cout << "Uncertainty for position: \n"
-  //           << marginals.marginalCovariance(X(ext_count)) << std::endl;
-  // std::cout << "Uncertainty for velocity: \n"
-  //           << marginals.marginalCovariance(V(ext_count)) << std::endl;
+  if (marginals)
+  {
+    std::cout << "Std for pos: " << marginals->marginalCovariance(X(ext_count)).diagonal().cwiseSqrt().transpose() << std::endl;
+    std::cout << "Std for vel: " << marginals->marginalCovariance(V(ext_count)).diagonal().cwiseSqrt().transpose() << std::endl;
+  }
   std::cout << "Error against external prior: \n"
             << "  pos = " << (*ext_pos - prev_state.pose().translation()).transpose() << "\n";
   if (ext_rot)
@@ -277,8 +289,8 @@ void extPosCallback(double timestamp, const gtsam::Point3 *ext_pos, const gtsam:
     std::cout << "  rot = " << ext_rot->between(prev_state.attitude()).rpy().transpose() << std::endl;
   }
   std::cout << "Bias: " << prev_bias << std::endl;
-  // std::cout << "Uncertainty for bias: \n"
-  //           << marginals.marginalCovariance(B(ext_count)) << std::endl;
+  if (marginals)
+    std::cout << "Std for bias: " << marginals->marginalCovariance(B(ext_count)).diagonal().cwiseSqrt().transpose() << std::endl;
   std::cout << "--------------------" << std::endl;
 }
 
