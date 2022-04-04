@@ -22,12 +22,14 @@ using gtsam::symbol_shorthand::B;
 using gtsam::symbol_shorthand::V;
 using gtsam::symbol_shorthand::X;
 
-#define USE_ISAM 0
+#define USE_ISAM 1
 
 std::shared_ptr<gtsam::PreintegratedCombinedMeasurements> preint;
 gtsam::NonlinearFactorGraph graph;
 gtsam::Values initial;
 gtsam::ISAM2 isam;
+
+bool skip_first_for_isam = true;
 
 auto ext_pos_noise = gtsam::noiseModel::Isotropic::Sigma(3, 1e-3);
 auto est_vel_noise = gtsam::noiseModel::Isotropic::Sigma(3, 1e-1);
@@ -169,6 +171,14 @@ void extPosCallback(double timestamp, const gtsam::Point3 *ext_pos, const gtsam:
 
   // OPTIMIZE
 #if USE_ISAM
+  if (skip_first_for_isam)
+  {
+    // This is apparently needed when using iSAM so it doesn't throw a
+    // IndeterminantLinearSystemException on the first optimization.
+    skip_first_for_isam = false;
+    return;
+  }
+
   isam.update(graph, initial);
   isam.update();
 
