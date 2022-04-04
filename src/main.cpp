@@ -14,6 +14,8 @@
 #include <gtsam/nonlinear/ISAM2.h>
 
 #include <gtsam_unstable/slam/PartialPriorFactor.h>
+#include <gtsam_unstable/nonlinear/FixedLagSmoother.h>
+#include <gtsam_unstable/nonlinear/IncrementalFixedLagSmoother.h>
 
 #include <opencv2/opencv.hpp>
 #include <cv_bridge/cv_bridge.h>
@@ -22,14 +24,25 @@ using gtsam::symbol_shorthand::B;
 using gtsam::symbol_shorthand::V;
 using gtsam::symbol_shorthand::X;
 
-#define USE_ISAM 1
+enum class BackendType
+{
+  LM,   // Levenberg-Marquardt
+  ISAM, // Incremental smoothing and mapping
+  IFL   // Incremental fixed lag smoother
+};
+
+constexpr BackendType backend_type = BackendType::IFL;
 
 std::shared_ptr<gtsam::PreintegratedCombinedMeasurements> preint;
 gtsam::NonlinearFactorGraph graph;
 gtsam::Values initial;
 gtsam::ISAM2 isam;
+gtsam::IncrementalFixedLagSmoother ifl;
 
 bool skip_first_for_isam = true;
+bool skip_first_for_ifl = true;
+
+gtsam::FixedLagSmootherKeyTimestampMap key_timestamp_map;
 
 auto ext_pos_noise = gtsam::noiseModel::Isotropic::Sigma(3, 1e-3);
 auto est_vel_noise = gtsam::noiseModel::Isotropic::Sigma(3, 1e-1);
@@ -133,6 +146,10 @@ void extPosCallback(double timestamp, const gtsam::Point3 *ext_pos, const gtsam:
     initial.insert(V(ext_count), prev_state.velocity());
     initial.insert(B(ext_count), prev_bias);
 
+    key_timestamp_map.insert({X(ext_count), timestamp});
+    key_timestamp_map.insert({V(ext_count), timestamp});
+    key_timestamp_map.insert({B(ext_count), timestamp});
+
     std::cout << "First ever ext pos, add prior and initial values" << std::endl;
     return;
   }
@@ -154,6 +171,10 @@ void extPosCallback(double timestamp, const gtsam::Point3 *ext_pos, const gtsam:
     graph.add(prior_factor);
   }
 
+  key_timestamp_map.insert({X(ext_count), timestamp});
+  key_timestamp_map.insert({V(ext_count), timestamp});
+  key_timestamp_map.insert({B(ext_count), timestamp});
+
   // double dt = timestamp - prev_ext_pos_timestamp;
   // prev_ext_pos_timestamp = timestamp;
   // gtsam::Vector3 est_vel_prior = (pos - prev_ext_pos) / dt;
@@ -170,40 +191,64 @@ void extPosCallback(double timestamp, const gtsam::Point3 *ext_pos, const gtsam:
   // initial.print("INITIAL VALUES: ");
 
   // OPTIMIZE
-#if USE_ISAM
-  if (skip_first_for_isam)
+  if (backend_type == BackendType::LM)
   {
-    // This is apparently needed when using iSAM so it doesn't throw a
-    // IndeterminantLinearSystemException on the first optimization.
-    skip_first_for_isam = false;
-    return;
+    gtsam::LevenbergMarquardtParams param;
+    param.setVerbosityLM("SUMMARY");
+    gtsam::LevenbergMarquardtOptimizer optimizer(graph, initial, param);
+    gtsam::Values result = optimizer.optimize();
+    // gtsam::Marginals marginals(graph, result);
+    std::cout << std::endl;
+    initial.update(result);
+
+    // SAVE RESULTS
+    prev_state = gtsam::NavState(result.at<gtsam::Pose3>(X(ext_count)), result.at<gtsam::Vector3>(V(ext_count)));
+    prev_bias = result.at<gtsam::imuBias::ConstantBias>(B(ext_count));
   }
+  else if (backend_type == BackendType::ISAM)
+  {
+    if (skip_first_for_isam)
+    {
+      // This is apparently needed when using iSAM so it doesn't throw a
+      // IndeterminantLinearSystemException on the first optimization.
+      skip_first_for_isam = false;
+      return;
+    }
 
-  isam.update(graph, initial);
-  isam.update();
+    isam.update(graph, initial);
+    isam.update();
 
-  graph.resize(0);
-  initial.clear();
+    graph.resize(0);
+    initial.clear();
 
-  gtsam::Pose3 x = isam.calculateEstimate<gtsam::Pose3>(X(ext_count));
-  gtsam::Vector3 v = isam.calculateEstimate<gtsam::Vector3>(V(ext_count));
-  gtsam::imuBias::ConstantBias b = isam.calculateEstimate<gtsam::imuBias::ConstantBias>(B(ext_count));
+    gtsam::Pose3 x = isam.calculateEstimate<gtsam::Pose3>(X(ext_count));
+    gtsam::Vector3 v = isam.calculateEstimate<gtsam::Vector3>(V(ext_count));
+    gtsam::imuBias::ConstantBias b = isam.calculateEstimate<gtsam::imuBias::ConstantBias>(B(ext_count));
 
-  prev_state = gtsam::NavState(x, v);
-  prev_bias = b;
-#else
-  gtsam::LevenbergMarquardtParams param;
-  param.setVerbosityLM("SUMMARY");
-  gtsam::LevenbergMarquardtOptimizer optimizer(graph, initial, param);
-  gtsam::Values result = optimizer.optimize();
-  // gtsam::Marginals marginals(graph, result);
-  std::cout << std::endl;
-  initial.update(result);
+    prev_state = gtsam::NavState(x, v);
+    prev_bias = b;
+  }
+  else if (backend_type == BackendType::IFL)
+  {
+    if (skip_first_for_ifl)
+    {
+      skip_first_for_ifl = false;
+      return;
+    }
 
-  // SAVE RESULTS
-  prev_state = gtsam::NavState(result.at<gtsam::Pose3>(X(ext_count)), result.at<gtsam::Vector3>(V(ext_count)));
-  prev_bias = result.at<gtsam::imuBias::ConstantBias>(B(ext_count));
-#endif
+    ifl.update(graph, initial, key_timestamp_map);
+    ifl.update();
+
+    graph.resize(0);
+    initial.clear();
+
+    gtsam::Pose3 x = ifl.calculateEstimate<gtsam::Pose3>(X(ext_count));
+    gtsam::Vector3 v = ifl.calculateEstimate<gtsam::Vector3>(V(ext_count));
+    gtsam::imuBias::ConstantBias b = ifl.calculateEstimate<gtsam::imuBias::ConstantBias>(B(ext_count));
+
+    prev_state = gtsam::NavState(x, v);
+    prev_bias = b;
+  }
 
   imu_meas_since_last_optim_count = 0;
 
@@ -302,6 +347,20 @@ int main(int argc, char **argv)
   ros::Subscriber imuSub = nh.subscribe<sensor_msgs::Imu>("/imu0", 100, imuCallback);
   // ros::Subscriber imgSub = nh.subscribe<sensor_msgs::Image>("/cam0/image_raw", 10, imgCallback);
 
+  std::cout << "Using backend type: '";
+  switch (backend_type)
+  {
+  case BackendType::LM:
+    std::cout << "Levenberg-Marquardt";
+    break;
+  case BackendType::ISAM:
+    std::cout << "iSAM";
+    break;
+  case BackendType::IFL:
+    std::cout << "Incremental fixed lag";
+    break;
+  }
+  std::cout << "'" << std::endl;
   std::cout << "INITIALIZED AND READY." << std::endl;
   ros::spin();
 }
