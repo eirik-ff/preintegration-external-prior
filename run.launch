@@ -1,0 +1,3 @@
+<launch>
+  <node pkg="preint_extpos_test" type="test_node" name="test_node" output="screen" />
+</launch>
