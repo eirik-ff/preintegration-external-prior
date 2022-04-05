@@ -31,7 +31,7 @@ enum class BackendType
   IFL   // Incremental fixed lag smoother
 };
 
-constexpr BackendType backend_type = BackendType::ISAM;
+constexpr BackendType backend_type = BackendType::LM;
 
 std::shared_ptr<gtsam::PreintegratedCombinedMeasurements> preint;
 gtsam::NonlinearFactorGraph graph;
@@ -162,17 +162,20 @@ void processExtPose(double timestamp, const gtsam::Point3 *ext_pos, const gtsam:
     key_timestamp_map.insert({V(ext_count), timestamp});
     key_timestamp_map.insert({B(ext_count), timestamp});
 
-    isam.update(graph, initial);
+    if (backend_type == BackendType::ISAM)
+    {
+      isam.update(graph, initial);
 
-    graph.resize(0);
-    initial.clear();
+      graph.resize(0);
+      initial.clear();
 
-    gtsam::Pose3 x = isam.calculateEstimate<gtsam::Pose3>(X(ext_count));
-    gtsam::Vector3 v = isam.calculateEstimate<gtsam::Vector3>(V(ext_count));
-    gtsam::imuBias::ConstantBias b = isam.calculateEstimate<gtsam::imuBias::ConstantBias>(B(ext_count));
+      gtsam::Pose3 x = isam.calculateEstimate<gtsam::Pose3>(X(ext_count));
+      gtsam::Vector3 v = isam.calculateEstimate<gtsam::Vector3>(V(ext_count));
+      gtsam::imuBias::ConstantBias b = isam.calculateEstimate<gtsam::imuBias::ConstantBias>(B(ext_count));
 
-    prev_state = gtsam::NavState(x, v);
-    prev_bias = b;
+      prev_state = gtsam::NavState(x, v);
+      prev_bias = b;
+    }
 
     // need to reset preintegration because the very first state x1 is set to be
     // at where-ever it is when the priors are added
@@ -335,10 +338,12 @@ int main(int argc, char **argv)
 
   // auto p = boost::make_shared<gtsam::PreintegrationCombinedParams>(gtsam::Vector3(0, 0, -9.81));
   auto p = gtsam::PreintegrationCombinedParams::MakeSharedU(9.8082);
+  // FROM SVO EUROC PARAMETER FILE
   // p->accelerometerCovariance = gtsam::I_3x3 * 0.008 * 0.008;
   // p->gyroscopeCovariance = gtsam::I_3x3 * 0.0012 * 0.0012;
   // p->biasAccCovariance = gtsam::I_3x3 * 0.1 * 0.1;
   // p->biasOmegaCovariance = gtsam::I_3x3 * 0.03 * 0.03;
+  // FROM EUROC PARAMETER FILE
   p->accelerometerCovariance = gtsam::I_3x3 * 2e-3 * 2e-3;
   p->gyroscopeCovariance = gtsam::I_3x3 * 1.6968e-04 * 1.6968e-04;
   p->biasAccCovariance = gtsam::I_3x3 * 3e-3 * 3e-3;
