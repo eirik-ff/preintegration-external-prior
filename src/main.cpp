@@ -24,6 +24,14 @@ using gtsam::symbol_shorthand::B;
 using gtsam::symbol_shorthand::V;
 using gtsam::symbol_shorthand::X;
 
+constexpr struct {
+    bool imu = false;
+    bool vicon = false;
+    bool leica = false;
+    bool optim = true;
+    bool result = true;
+} verbosity;
+
 enum class BackendType
 {
   LM,   // Levenberg-Marquardt
@@ -31,7 +39,7 @@ enum class BackendType
   IFL   // Incremental fixed lag smoother
 };
 
-constexpr BackendType backend_type = BackendType::LM;
+constexpr BackendType backend_type = BackendType::ISAM;
 
 std::shared_ptr<gtsam::PreintegratedCombinedMeasurements> preint;
 gtsam::NonlinearFactorGraph graph;
@@ -77,7 +85,8 @@ void imgCallback(const sensor_msgs::Image::ConstPtr msg)
 void imuCallback(const sensor_msgs::Imu::ConstPtr msg)
 {
   static int imu_meas_count = 0;
-  std::cout << "Got IMU measurement " << ++imu_meas_count << std::endl;
+  if (verbosity.imu)
+    std::cout << "Got IMU measurement " << ++imu_meas_count << std::endl;
 
   double timestamp = msg->header.stamp.toSec();
   auto &a = msg->linear_acceleration;
@@ -89,7 +98,9 @@ void imuCallback(const sensor_msgs::Imu::ConstPtr msg)
   if (prev_imu_timestamp == 0)
   {
     prev_imu_timestamp = timestamp;
-    std::cout << "Set first ever prev imu timestamp" << std::endl;
+
+    if (verbosity.imu)
+      std::cout << "Set first ever prev imu timestamp" << std::endl;
   }
   else
   {
@@ -98,12 +109,13 @@ void imuCallback(const sensor_msgs::Imu::ConstPtr msg)
     prev_imu_timestamp = timestamp;
     preint->integrateMeasurement(acc, gyr, dt);
 
-    std::cout << "Preintegrated measurement, deltas: \n"
-              << "  deltaTij     = " << preint->deltaTij() << "\n"
-              << "  deltaPij     = " << preint->deltaPij().transpose() << "\n"
-              << "  deltaVij     = " << preint->deltaVij().transpose() << "\n"
-              << "  deltaRij.rpy = " << preint->deltaRij().rpy().transpose() << "\n"
-              << "--------------------" << std::endl;
+    if (verbosity.imu)
+      std::cout << "Preintegrated measurement, deltas: \n"
+                << "  deltaTij     = " << preint->deltaTij() << "\n"
+                << "  deltaPij     = " << preint->deltaPij().transpose() << "\n"
+                << "  deltaVij     = " << preint->deltaVij().transpose() << "\n"
+                << "  deltaRij.rpy = " << preint->deltaRij().rpy().transpose() << "\n"
+                << "--------------------" << std::endl;
   }
 }
 
@@ -181,7 +193,8 @@ void processExtPose(double timestamp, const gtsam::Point3 *ext_pos, const gtsam:
     // at where-ever it is when the priors are added
     preint->resetIntegrationAndSetBias(prev_bias);
 
-    std::cout << "First ever ext pos, add prior and initial values" << std::endl;
+    if (verbosity.vicon || verbosity.leica)
+      std::cout << "First ever ext pos, add prior and initial values" << std::endl;
     return;
   }
 
@@ -228,7 +241,8 @@ void processExtPose(double timestamp, const gtsam::Point3 *ext_pos, const gtsam:
   if (backend_type == BackendType::LM)
   {
     gtsam::LevenbergMarquardtParams param;
-    param.setVerbosityLM("SUMMARY");
+    if (verbosity.optim)
+      param.setVerbosityLM("SUMMARY");
     gtsam::LevenbergMarquardtOptimizer optimizer(graph, initial, param);
     gtsam::Values result = optimizer.optimize();
     // gtsam::Marginals marginals(graph, result);
@@ -276,40 +290,49 @@ void processExtPose(double timestamp, const gtsam::Point3 *ext_pos, const gtsam:
   preint->resetIntegrationAndSetBias(prev_bias);
 
   // PRINT LATEST RESULT
-  std::cout << "--------------------\nRESULTS: " << std::endl;
-  std::cout << "Prior from mocap: \n"
-            << "  pos = " << ext_pos->transpose() << std::endl;
-  if (ext_rot)
+  if (verbosity.result)
   {
-    std::cout << "  rot = " << ext_rot->rpy().transpose() << std::endl;
+    std::cout << "--------------------\nRESULTS: " << std::endl;
+    std::cout << "Prior from mocap: \n"
+              << "  pos = " << ext_pos->transpose() << std::endl;
+    if (ext_rot)
+    {
+      std::cout << "  rot = " << ext_rot->rpy().transpose() << std::endl;
+    }
+    std::cout << "State: \n"
+              << "  pos = " << prev_state.pose().translation().transpose() << "\n"
+              << "  rot = " << prev_state.attitude().rpy().transpose() << "\n"
+              << "  vel = " << prev_state.velocity().transpose() << std::endl;
+    if (marginals)
+    {
+      std::cout << "Std for pose: " << marginals->marginalCovariance(X(ext_count)).diagonal().cwiseSqrt().transpose() << std::endl;
+      std::cout << "Std for vel: " << marginals->marginalCovariance(V(ext_count)).diagonal().cwiseSqrt().transpose() << std::endl;
+    }
+    std::cout << "Error against external prior: \n"
+              << "  pos = " << (*ext_pos - prev_state.pose().translation()).transpose() << "\n";
+    if (ext_rot)
+    {
+      std::cout << "  rot = " << ext_rot->between(prev_state.attitude()).rpy().transpose() << std::endl;
+    }
+    std::cout << "Bias: \n"
+              << "  acc = " << prev_bias.accelerometer().transpose() << "\n"
+              << "  gyr = " << prev_bias.gyroscope().transpose() << std::endl;
+    if (marginals)
+      std::cout << "Std for bias: " << marginals->marginalCovariance(B(ext_count)).diagonal().cwiseSqrt().transpose() << std::endl;
+    std::cout << "--------------------" << std::endl;
   }
-  std::cout << "State: \n"
-            << "  pos = " << prev_state.pose().translation().transpose() << "\n"
-            << "  rot = " << prev_state.attitude().rpy().transpose() << "\n"
-            << "  vel = " << prev_state.velocity().transpose() << std::endl;
-  if (marginals)
-  {
-    std::cout << "Std for pose: " << marginals->marginalCovariance(X(ext_count)).diagonal().cwiseSqrt().transpose() << std::endl;
-    std::cout << "Std for vel: " << marginals->marginalCovariance(V(ext_count)).diagonal().cwiseSqrt().transpose() << std::endl;
-  }
-  std::cout << "Error against external prior: \n"
-            << "  pos = " << (*ext_pos - prev_state.pose().translation()).transpose() << "\n";
-  if (ext_rot)
-  {
-    std::cout << "  rot = " << ext_rot->between(prev_state.attitude()).rpy().transpose() << std::endl;
-  }
-  std::cout << "Bias: \n"
-            << "  acc = " << prev_bias.accelerometer().transpose() << "\n"
-            << "  gyr = " << prev_bias.gyroscope().transpose() << std::endl;
-  if (marginals)
-    std::cout << "Std for bias: " << marginals->marginalCovariance(B(ext_count)).diagonal().cwiseSqrt().transpose() << std::endl;
-  std::cout << "--------------------" << std::endl;
 }
 
 void leicaCallback(const geometry_msgs::PointStamped::ConstPtr msg)
 {
+  static int count = 0;
+  count++;
+
   double timestamp = msg->header.stamp.toSec();
   gtsam::Point3 ext_pos(msg->point.x, msg->point.y, msg->point.z);
+
+  if (verbosity.leica)
+    std::cout << "Got Leica measurement " << count << std::endl;
 
   processExtPose(timestamp, &ext_pos, nullptr);
 }
@@ -318,7 +341,9 @@ void viconCallback(const geometry_msgs::TransformStamped::ConstPtr msg)
 {
   static int count = 0;
   count++;
-  std::cout << "Got Vicon measurement " << count << std::endl;
+  if (verbosity.vicon)
+    std::cout << "Got Vicon measurement " << count << std::endl;
+
   // only process every 5 message since vicon runs at 100 hz instead of 20 hz (like leica)
   if (count % 5 == 0)
   {
@@ -380,7 +405,7 @@ int main(int argc, char **argv)
     std::cout << "Levenberg-Marquardt";
     break;
   case BackendType::ISAM:
-    std::cout << "iSAM";
+    std::cout << "iSAM2";
     break;
   case BackendType::IFL:
     std::cout << "Incremental fixed lag";
