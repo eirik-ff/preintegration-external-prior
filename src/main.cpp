@@ -1,4 +1,5 @@
 #include <iostream>
+#include <iomanip>
 
 #include <ros/ros.h>
 #include <sensor_msgs/Imu.h>
@@ -292,16 +293,19 @@ void processExtPose(double timestamp, const gtsam::Point3 *ext_pos, const gtsam:
   // PRINT LATEST RESULT
   if (verbosity.result)
   {
-    std::cout << "--------------------\nRESULTS: " << std::endl;
+    auto p = std::cout.precision();
+    std::cout.precision(17);
+    std::cout << "--------------------\nRESULTS: t = " << timestamp << std::endl;
+    std::cout.precision(p);
     std::cout << "Prior from mocap: \n"
               << "  pos = " << ext_pos->transpose() << std::endl;
     if (ext_rot)
     {
-      std::cout << "  rot = " << ext_rot->rpy().transpose() << std::endl;
+      std::cout << "  ypr = " << ext_rot->ypr().transpose() << std::endl;
     }
     std::cout << "State: \n"
               << "  pos = " << prev_state.pose().translation().transpose() << "\n"
-              << "  rot = " << prev_state.attitude().rpy().transpose() << "\n"
+              << "  ypr = " << prev_state.attitude().ypr().transpose() << "\n"
               << "  vel = " << prev_state.velocity().transpose() << std::endl;
     if (marginals)
     {
@@ -312,7 +316,7 @@ void processExtPose(double timestamp, const gtsam::Point3 *ext_pos, const gtsam:
               << "  pos = " << (*ext_pos - prev_state.pose().translation()).transpose() << "\n";
     if (ext_rot)
     {
-      std::cout << "  rot = " << ext_rot->between(prev_state.attitude()).rpy().transpose() << std::endl;
+      std::cout << "  ypr = " << ext_rot->between(prev_state.attitude()).ypr().transpose() << std::endl;
     }
     std::cout << "Bias: \n"
               << "  acc = " << prev_bias.accelerometer().transpose() << "\n"
