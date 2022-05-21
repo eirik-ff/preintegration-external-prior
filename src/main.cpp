@@ -13,6 +13,7 @@
 #include <gtsam/nonlinear/NonlinearFactorGraph.h>
 #include <gtsam/nonlinear/Marginals.h>
 #include <gtsam/nonlinear/ISAM2.h>
+#include <gtsam/navigation/GPSFactor.h>
 
 #include <gtsam_unstable/slam/PartialPriorFactor.h>
 #include <gtsam_unstable/nonlinear/FixedLagSmoother.h>
@@ -29,6 +30,7 @@ constexpr struct {
     bool imu = false;
     bool vicon = false;
     bool leica = false;
+    bool graph = false;
     bool optim = true;
     bool result = true;
 } verbosity;
@@ -136,7 +138,7 @@ void processExtPose(double timestamp, const gtsam::Point3 *ext_pos, const gtsam:
     prev_ext_pos = *ext_pos;
 
     auto velocity_noise_model = gtsam::noiseModel::Isotropic::Sigma(3, 0.1); // m/s
-    auto bias_noise_model = gtsam::noiseModel::Isotropic::Sigma(6, 1e-3);
+    auto bias_noise_model = gtsam::noiseModel::Isotropic::Sigma(6, 1e-1);
 
     // zero priors for velocity and bias
     gtsam::Vector3 prior_vel;
@@ -157,8 +159,10 @@ void processExtPose(double timestamp, const gtsam::Point3 *ext_pos, const gtsam:
     }
     else
     {
-      gtsam::PartialPriorFactor<gtsam::Pose3> prior_factor(X(ext_count), {3, 4, 5}, *ext_pos, ext_pos_noise);
-      graph.add(prior_factor);
+      // gtsam::PartialPriorFactor<gtsam::Pose3> prior_factor(X(ext_count), {3, 4, 5}, *ext_pos, ext_pos_noise);
+      // gtsam::GPSFactor prior_factor(X(ext_count), *ext_pos, ext_pos_noise);
+      gtsam::Pose3 prior(gtsam::Rot3::identity(), *ext_pos);
+      graph.addPrior(X(ext_count), prior, ext_pose_noise);
 
       graph.addPrior(V(ext_count), prior_vel, velocity_noise_model);
       graph.addPrior(B(ext_count), prior_bias, bias_noise_model);
@@ -212,7 +216,8 @@ void processExtPose(double timestamp, const gtsam::Point3 *ext_pos, const gtsam:
   }
   else
   {
-    gtsam::PartialPriorFactor<gtsam::Pose3> prior_factor(X(ext_count), {3, 4, 5}, *ext_pos, ext_pos_noise);
+    // gtsam::PartialPriorFactor<gtsam::Pose3> prior_factor(X(ext_count), {3, 4, 5}, *ext_pos, ext_pos_noise);
+    gtsam::GPSFactor prior_factor(X(ext_count), *ext_pos, ext_pos_noise);
     graph.add(prior_factor);
   }
 
@@ -232,10 +237,19 @@ void processExtPose(double timestamp, const gtsam::Point3 *ext_pos, const gtsam:
   initial.insert(B(ext_count), prev_bias);
 
   // PRINT
-  // graph.print("FACTOR GRAPH: ");
-  // isam.getFactorsUnsafe().print("CURRENT ISAM FACTORS: ");
-  // graph.print("GRAGH TO ADD TO ISAM: ");
-  // initial.print("INITIAL VALUES: ");
+  if (verbosity.graph)
+  {
+    if (backend_type == BackendType::LM)
+    {
+      graph.print("FACTOR GRAPH: ");
+      initial.print("INITIAL VALUES: ");
+    }
+    else if (backend_type == BackendType::ISAM)
+    {
+      graph.print("GRAGH TO ADD TO ISAM: ");
+      isam.getFactorsUnsafe().print("CURRENT ISAM FACTORS: ");
+    }
+  }
 
   // OPTIMIZE
   std::shared_ptr<gtsam::Marginals> marginals = nullptr;
@@ -381,26 +395,33 @@ int main(int argc, char **argv)
   p->integrationCovariance = gtsam::I_3x3 * 1e-4 * 1e-4;
   p->biasAccOmegaInt = gtsam::I_6x6 * 1e-4 * 1e-4;
 
-  // FOR EUROC MACHINE ROOM (T_imu_leica = T_sensor_body)
-  // // gtsam::Rot3 rot(0, 0, 1,
-  // //                 0, -1, 0,
-  // //                 1, 0, 0);
-  // // gtsam::Rot3 rot = gtsam::Rot3::identity();
-  // gtsam::Point3 trans(7.48903e-02, -1.84772e-02, -1.20209e-01);
-  // ros::Subscriber extPosSub = nh.subscribe<geometry_msgs::PointStamped>("/leica/position", 100, leicaCallback);
+  // FOR EUROC MACHINE ROOM 
+  gtsam::Rot3 rot_IL(0, 0, 1,
+                  0, -1, 0,
+                  1, 0, 0);
+  // gtsam::Rot3 rot_IL = gtsam::Rot3::identity();
+  gtsam::Point3 trans_IL(7.48903e-02, -1.84772e-02, -1.20209e-01);
 
-  // FOR EUROC VICON ROOM (T_imu_vicon = T_sensor_body)
-  gtsam::Rot3 rot(0.33638, -0.01749,  0.94156,
+  // FOR EUROC VICON ROOM 
+  gtsam::Rot3 rot_IV(0.33638, -0.01749,  0.94156,
                  -0.02078, -0.99972, -0.01114,
                   0.94150, -0.01582, -0.33665);
-  gtsam::Point3 trans(0.06901, -0.02781, -0.12395);
-  ros::Subscriber extPosSub = nh.subscribe<geometry_msgs::TransformStamped>("/vicon/firefly_sbx/firefly_sbx", 100, viconCallback);
+  gtsam::Point3 trans_IV(0.06901, -0.02781, -0.12395);
 
-  p->body_P_sensor = gtsam::Pose3(rot, trans).inverse();
+  // COMMENT OUT/IN THE DESIRED DATASET
+  /// EUROC MACHINE HALL
+  gtsam::Pose3 T_imu_mocap(rot_IL, trans_IL);
+  ros::Subscriber extPosSub = nh.subscribe<geometry_msgs::PointStamped>("/leica/position", 100, leicaCallback);
+
+  /// EUROC VICON ROOM
+  // gtsam::Pose3 T_imu_mocap(rot_IV, trans_IV);
+  // ros::Subscriber extPosSub = nh.subscribe<geometry_msgs::TransformStamped>("/vicon/firefly_sbx/firefly_sbx", 100, viconCallback);
+
+  p->body_P_sensor = T_imu_mocap.inverse();
   preint = std::make_shared<gtsam::PreintegratedCombinedMeasurements>(p);
 
   ros::Subscriber imuSub = nh.subscribe<sensor_msgs::Imu>("/imu0", 100, imuCallback);
-  // ros::Subscriber imgSub = nh.subscribe<sensor_msgs::Image>("/cam0/image_raw", 10, imgCallback);
+  ros::Subscriber imgSub = nh.subscribe<sensor_msgs::Image>("/cam0/image_raw", 10, imgCallback);
 
   std::cout << "Using backend type: '";
   switch (backend_type)
