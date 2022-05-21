@@ -409,12 +409,12 @@ int main(int argc, char **argv)
 
   // COMMENT OUT/IN THE DESIRED DATASET
   /// EUROC MACHINE HALL
-  gtsam::Pose3 T_imu_mocap(rot_IL, trans_IL);
-  ros::Subscriber extPosSub = nh.subscribe<geometry_msgs::PointStamped>("/leica/position", 100, leicaCallback);
+  // gtsam::Pose3 T_imu_mocap(rot_IL, trans_IL);
+  // ros::Subscriber extPosSub = nh.subscribe<geometry_msgs::PointStamped>("/leica/position", 100, leicaCallback);
 
   /// EUROC VICON ROOM
-  // gtsam::Pose3 T_imu_mocap(rot_IV, trans_IV);
-  // ros::Subscriber extPosSub = nh.subscribe<geometry_msgs::TransformStamped>("/vicon/firefly_sbx/firefly_sbx", 100, viconCallback);
+  gtsam::Pose3 T_imu_mocap(rot_IV, trans_IV);
+  ros::Subscriber extPosSub = nh.subscribe<geometry_msgs::TransformStamped>("/vicon/firefly_sbx/firefly_sbx", 100, viconCallback);
 
   p->body_P_sensor = T_imu_mocap.inverse();
   preint = std::make_shared<gtsam::PreintegratedCombinedMeasurements>(p);

@@ -7,8 +7,8 @@ import seaborn as sns
 
 from scipy.spatial.transform import Rotation as Rot
 
-DATASET_NAME = "leica"
-#DATASET_NAME = "vicon"
+#DATASET_NAME = "leica"
+DATASET_NAME = "vicon"
 
 pattern = r"RESULTS: t = (-?[\d.]+(?:e-?\d+)?)\s.+\s.+\s.*\s?State: \s  pos = +(-?[\d.]+(?:e-?\d+)?) +(-?[\d.]+(?:e-?\d+)?) +(-?[\d.]+(?:e-?\d+)?)\s  ypr = +(-?[\d.]+(?:e-?\d+)?) +(-?[\d.]+(?:e-?\d+)?) +(-?[\d.]+(?:e-?\d+)?)\s  vel = +(-?[\d.]+(?:e-?\d+)?) +(-?[\d.]+(?:e-?\d+)?) +(-?[\d.]+(?:e-?\d+)?)\s.+\s.+\s.*\s?Bias: \s  acc = +(-?[\d.]+(?:e-?\d+)?) +(-?[\d.]+(?:e-?\d+)?) +(-?[\d.]+(?:e-?\d+)?)\s  gyr = +(-?[\d.]+(?:e-?\d+)?) +(-?[\d.]+(?:e-?\d+)?) +(-?[\d.]+(?:e-?\d+)?)"
 
