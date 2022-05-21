@@ -159,8 +159,7 @@ void processExtPose(double timestamp, const gtsam::Point3 *ext_pos, const gtsam:
     }
     else
     {
-      // gtsam::PartialPriorFactor<gtsam::Pose3> prior_factor(X(ext_count), {3, 4, 5}, *ext_pos, ext_pos_noise);
-      // gtsam::GPSFactor prior_factor(X(ext_count), *ext_pos, ext_pos_noise);
+      // Need full pose prior on first variable
       gtsam::Pose3 prior(gtsam::Rot3::identity(), *ext_pos);
       graph.addPrior(X(ext_count), prior, ext_pose_noise);
 
@@ -396,10 +395,10 @@ int main(int argc, char **argv)
   p->biasAccOmegaInt = gtsam::I_6x6 * 1e-4 * 1e-4;
 
   // FOR EUROC MACHINE ROOM 
-  gtsam::Rot3 rot_IL(0, 0, 1,
-                  0, -1, 0,
-                  1, 0, 0);
-  // gtsam::Rot3 rot_IL = gtsam::Rot3::identity();
+  // gtsam::Rot3 rot_IL(0, 0, 1,
+  //                 0, -1, 0,
+  //                 1, 0, 0);
+  gtsam::Rot3 rot_IL = gtsam::Rot3::identity();
   gtsam::Point3 trans_IL(7.48903e-02, -1.84772e-02, -1.20209e-01);
 
   // FOR EUROC VICON ROOM 
