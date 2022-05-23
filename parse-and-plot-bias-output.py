@@ -32,7 +32,7 @@ class Data:
 
 
 parser = argparse.ArgumentParser()
-parser.add_argument("dataset", choices=["vicon", "leica"], help="Which dataset to use")
+parser.add_argument("dataset", choices=["vicon", "leica_full", "leica_skip40"], help="Which dataset to use")
 parser.add_argument("data", help="Path to data file")
 parser.add_argument("--gt", help="Path to ground truth file")
 parser.add_argument("--quat", action="store_true", help="Include this if dataset include quaternion output")
@@ -48,7 +48,7 @@ if args.quat:
 else:
     pattern = pattern_ypr_only
 
-if args.dataset == "leica":
+if args.dataset.startswith("leica"):
     # R_IL = Rot.from_matrix(np.array([
     #     0, 0, -1,
     #     0, -1, 0,
@@ -132,7 +132,7 @@ else:
 
 data = Data(time, pos, b_a, b_g, ypr=ypr, quat=quat)
 
-if args.dataset == "leica":
+if args.dataset.startswith("leica"):
     # this is to make the plot nicer since we're using ypr
     R_leica = Rot.from_matrix([
         [0, 0, -1],
@@ -162,6 +162,7 @@ plt.plot(gt.time, gt.pos[:, 2], "g")
 plt.plot(data.time, data.pos[:, 2], "b")
 plt.ylabel("z [m]")
 plt.xlabel("time [sec]")
+plt.tight_layout()
 
 plt.figure()
 ax = plt.subplot(3, 1, 1)
@@ -180,6 +181,7 @@ plt.plot(gt.time, gt.ypr[:, 0], "g")
 plt.plot(data.time, data.ypr[:, 0], "b")
 plt.ylabel("yaw [rad]")
 plt.xlabel("time [sec]")
+plt.tight_layout()
 
 if args.quat:
     plt.figure()
@@ -204,24 +206,32 @@ if args.quat:
     plt.plot(data.time, data.quat[:, 3], "b")
     plt.ylabel("w")
     plt.xlabel("time [sec]")
+    plt.tight_layout()
 
 plt.figure()
 ax = plt.subplot(3, 1, 1)
 plt.title("Bias accelerometer")
 plt.plot(gt.time, gt.bias_acc[:, 0], "g")
 plt.plot(data.time, data.bias_acc[:, 0], "b")
+# plt.ylim([-0.4, 0.3])  # for leica skip40
+plt.ylim([-0.25, 0.2])  # for leica full
 ax.set_xticklabels([])
 plt.ylabel("x [m/s^2]")
 ax = plt.subplot(3, 1, 2)
 plt.plot(gt.time, gt.bias_acc[:, 1], "g")
 plt.plot(data.time, data.bias_acc[:, 1], "b")
+# plt.ylim([-0.3, 0.5])  # for leica skip40
+plt.ylim([-0.2, 0.5])  # for leica full
 ax.set_xticklabels([])
 plt.ylabel("y [m/s^2]")
 ax = plt.subplot(3, 1, 3)
 plt.plot(gt.time, gt.bias_acc[:, 2], "g")
 plt.plot(data.time, data.bias_acc[:, 2], "b")
+# plt.ylim([-0.3, 0.3])  # for leica skip40
+# plt.ylim([-0.4, 0.5])  # for leica full
 plt.ylabel("z [m/s^2]")
 plt.xlabel("time [sec]")
+plt.tight_layout()
 
 plt.figure()
 ax = plt.subplot(3, 1, 1)
@@ -240,6 +250,39 @@ plt.plot(gt.time, gt.bias_gyr[:, 2], "g")
 plt.plot(data.time, data.bias_gyr[:, 2], "b")
 plt.ylabel("z [rad/s]")
 plt.xlabel("time [sec]")
+plt.tight_layout()
+
+if args.dataset.startswith("leica"):
+    plt.figure()
+    ax = plt.subplot(3, 1, 1)
+    plt.title("Bias accelerometer zoomed in")
+    plt.plot(gt.time, gt.bias_acc[:, 0], "g")
+    plt.plot(data.time, data.bias_acc[:, 0], "b")
+    if args.dataset == "leica_skip40":
+        plt.ylim([-0.4, 0.3])  # for leica skip40
+    else:
+        plt.ylim([-0.25, 0.2])  # for leica full
+    ax.set_xticklabels([])
+    plt.ylabel("x [m/s^2]")
+    ax = plt.subplot(3, 1, 2)
+    plt.plot(gt.time, gt.bias_acc[:, 1], "g")
+    plt.plot(data.time, data.bias_acc[:, 1], "b")
+    if args.dataset == "leica_skip40":
+        plt.ylim([-0.3, 0.5])  # for leica skip40
+    else:
+        plt.ylim([-0.2, 0.5])  # for leica full
+    ax.set_xticklabels([])
+    plt.ylabel("y [m/s^2]")
+    ax = plt.subplot(3, 1, 3)
+    plt.plot(gt.time, gt.bias_acc[:, 2], "g")
+    plt.plot(data.time, data.bias_acc[:, 2], "b")
+    if args.dataset == "leica_skip40":
+        plt.ylim([-0.3, 0.3])  # for leica skip40
+    else:
+        plt.ylim([-0.4, 0.5])  # for leica full
+    plt.ylabel("z [m/s^2]")
+    plt.xlabel("time [sec]")
+    plt.tight_layout()
 
 #plt.tight_layout()
 plt.show()
