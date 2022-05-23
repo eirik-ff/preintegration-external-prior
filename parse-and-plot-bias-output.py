@@ -178,7 +178,7 @@ plt.plot(data.time, data.ypr[:, 0], "b")
 plt.ylabel("yaw [rad]")
 plt.xlabel("time [sec]")
 
-if quat:
+if args.quat:
     plt.figure()
     ax = plt.subplot(4, 1, 1)
     plt.title("Quaternion")
