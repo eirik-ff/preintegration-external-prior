@@ -60,13 +60,6 @@ if args.dataset == "leica":
     R_imu_mocap = R_IL
     t_imu_mocap = t_IL
 
-    # this is to make the plot nicer since we're using ypr
-    R_leica = Rot.from_matrix([
-        [0, 0, -1],
-        [0, -1, 0],
-        [1, 0, 0]
-    ])
-
 elif args.dataset == "vicon":
     R_IV = Rot.from_matrix(np.array([
         0.33638, -0.01749,  0.94156,
@@ -77,7 +70,6 @@ elif args.dataset == "vicon":
 
     R_imu_mocap = R_IV
     t_imu_mocap = t_IV
-    R_leica = Rot.from_matrix(np.eye(3))
 
 
 gt: Data = None
@@ -101,6 +93,10 @@ if args.gt:
 filename = args.data
 with open(filename, "r") as f:
     string = f.read()
+
+if "quat" in string and not args.quat:
+    print("You provided a dataset with quaternion data but didn't use --quat flag. Use --quat flag.")
+    sys.exit(1)
 
 matches = re.findall(pattern, string)
 
@@ -136,8 +132,15 @@ else:
 
 data = Data(time, pos, b_a, b_g, ypr=ypr, quat=quat)
 
-data.ypr = (Rot.from_euler("ZYX", data.ypr) * R_leica).as_euler("ZYX")
-gt.ypr = (Rot.from_euler("ZYX", gt.ypr) * R_leica).as_euler("ZYX")
+if args.dataset == "leica":
+    # this is to make the plot nicer since we're using ypr
+    R_leica = Rot.from_matrix([
+        [0, 0, -1],
+        [0, -1, 0],
+        [1, 0, 0]
+    ])
+    data.ypr = (Rot.from_euler("ZYX", data.ypr) * R_leica).as_euler("ZYX")
+    gt.ypr = (Rot.from_euler("ZYX", gt.ypr) * R_leica).as_euler("ZYX")
 
 # plot 
 sns.set()
