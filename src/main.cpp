@@ -319,7 +319,8 @@ void processExtPose(double timestamp, const gtsam::Point3 *ext_pos, const gtsam:
     std::cout << "State: \n"
               << "  pos = " << prev_state.pose().translation().transpose() << "\n"
               << "  ypr = " << prev_state.attitude().ypr().transpose() << "\n"
-              << "  vel = " << prev_state.velocity().transpose() << std::endl;
+              << "  vel = " << prev_state.velocity().transpose() << "\n"
+              << "  quat = " << prev_state.attitude().quaternion().transpose() << std::endl;
     if (marginals)
     {
       std::cout << "Std for pose: " << marginals->marginalCovariance(X(ext_count)).diagonal().cwiseSqrt().transpose() << std::endl;
@@ -375,11 +376,20 @@ void viconCallback(const geometry_msgs::TransformStamped::ConstPtr msg)
 
 int main(int argc, char **argv)
 {
+  if (argc < 4) // when using roslaunch, ros adds two extra params
+  {
+    ROS_WARN_STREAM("Missing dataset name\n"
+                    << "Usage: " << argv[0] << " [vicon/leica]");
+    return 1;
+  }
+  std::cout << "Using dataset '" << argv[1] << "'" << std::endl;
+
   ros::init(argc, argv, "test_node");
   ros::NodeHandle nh;
 
   // auto p = boost::make_shared<gtsam::PreintegrationCombinedParams>(gtsam::Vector3(0, 0, -9.81));
-  auto p = gtsam::PreintegrationCombinedParams::MakeSharedU(9.8082);
+  // auto p = gtsam::PreintegrationCombinedParams::MakeSharedU(9.8082);
+  auto p = gtsam::PreintegrationCombinedParams::MakeSharedU(9.77965);
   // FROM SVO EUROC PARAMETER FILE
   // p->accelerometerCovariance = gtsam::I_3x3 * 0.008 * 0.008;
   // p->gyroscopeCovariance = gtsam::I_3x3 * 0.0012 * 0.0012;
@@ -407,14 +417,25 @@ int main(int argc, char **argv)
                   0.94150, -0.01582, -0.33665);
   gtsam::Point3 trans_IV(0.06901, -0.02781, -0.12395);
 
-  // COMMENT OUT/IN THE DESIRED DATASET
-  /// EUROC MACHINE HALL
-  // gtsam::Pose3 T_imu_mocap(rot_IL, trans_IL);
-  // ros::Subscriber extPosSub = nh.subscribe<geometry_msgs::PointStamped>("/leica/position", 100, leicaCallback);
-
-  /// EUROC VICON ROOM
-  gtsam::Pose3 T_imu_mocap(rot_IV, trans_IV);
-  ros::Subscriber extPosSub = nh.subscribe<geometry_msgs::TransformStamped>("/vicon/firefly_sbx/firefly_sbx", 100, viconCallback);
+  gtsam::Pose3 T_imu_mocap;
+  ros::Subscriber extPosSub;
+  if (strcmp(argv[1], "leica") == 0)
+  {
+    /// EUROC MACHINE HALL
+    T_imu_mocap = gtsam::Pose3(rot_IL, trans_IL);
+    extPosSub = nh.subscribe<geometry_msgs::PointStamped>("/leica/position", 100, leicaCallback);
+  }
+  else if (strcmp(argv[1], "vicon") == 0)
+  {
+    /// EUROC VICON ROOM
+    T_imu_mocap = gtsam::Pose3(rot_IV, trans_IV);
+    extPosSub = nh.subscribe<geometry_msgs::TransformStamped>("/vicon/firefly_sbx/firefly_sbx", 100, viconCallback);
+  }
+  else
+  {
+    ROS_WARN_STREAM("Dataset '" << argv[1] << "' not recognized. Only allowed with 'leica' or 'vicon' (case sensitive).");
+    return 1;
+  }
 
   p->body_P_sensor = T_imu_mocap.inverse();
   preint = std::make_shared<gtsam::PreintegratedCombinedMeasurements>(p);
@@ -437,5 +458,7 @@ int main(int argc, char **argv)
   }
   std::cout << "'" << std::endl;
   std::cout << "INITIALIZED AND READY." << std::endl;
+
   ros::spin();
+  return 0;
 }

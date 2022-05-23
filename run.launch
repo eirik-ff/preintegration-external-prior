@@ -1,3 +1,4 @@
 <launch>
-  <node pkg="preint_extpos_test" type="test_node" name="test_node" output="screen" />
+  <arg name="dataset" />
+  <node pkg="preint_extpos_test" type="test_node" name="test_node" output="screen" args="$(arg dataset)" />
 </launch>
