@@ -213,22 +213,16 @@ ax = plt.subplot(3, 1, 1)
 plt.title("Bias accelerometer")
 plt.plot(gt.time, gt.bias_acc[:, 0], "g")
 plt.plot(data.time, data.bias_acc[:, 0], "b")
-# plt.ylim([-0.4, 0.3])  # for leica skip40
-plt.ylim([-0.25, 0.2])  # for leica full
 ax.set_xticklabels([])
 plt.ylabel("x [m/s^2]")
 ax = plt.subplot(3, 1, 2)
 plt.plot(gt.time, gt.bias_acc[:, 1], "g")
 plt.plot(data.time, data.bias_acc[:, 1], "b")
-# plt.ylim([-0.3, 0.5])  # for leica skip40
-plt.ylim([-0.2, 0.5])  # for leica full
 ax.set_xticklabels([])
 plt.ylabel("y [m/s^2]")
 ax = plt.subplot(3, 1, 3)
 plt.plot(gt.time, gt.bias_acc[:, 2], "g")
 plt.plot(data.time, data.bias_acc[:, 2], "b")
-# plt.ylim([-0.3, 0.3])  # for leica skip40
-# plt.ylim([-0.4, 0.5])  # for leica full
 plt.ylabel("z [m/s^2]")
 plt.xlabel("time [sec]")
 plt.tight_layout()
