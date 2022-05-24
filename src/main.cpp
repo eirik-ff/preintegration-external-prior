@@ -37,12 +37,13 @@ constexpr struct {
 
 enum class BackendType
 {
+  NONE, // No backend
   LM,   // Levenberg-Marquardt
   ISAM, // Incremental smoothing and mapping
   IFL   // Incremental fixed lag smoother
 };
 
-constexpr BackendType backend_type = BackendType::ISAM;
+BackendType backend_type = BackendType::NONE;
 
 std::shared_ptr<gtsam::PreintegratedCombinedMeasurements> preint;
 gtsam::NonlinearFactorGraph graph;
@@ -376,13 +377,13 @@ void viconCallback(const geometry_msgs::TransformStamped::ConstPtr msg)
 
 int main(int argc, char **argv)
 {
-  if (argc < 4) // when using roslaunch, ros adds two extra params
+  if (argc < 5) // when using roslaunch, ros adds two extra params
   {
     ROS_WARN_STREAM("Missing dataset name\n"
-                    << "Usage: " << argv[0] << " [vicon/leica]");
+                    << "Usage: " << argv[0] << " [lm/isam/ifl] [vicon/leica]");
     return 1;
   }
-  std::cout << "Using dataset '" << argv[1] << "'" << std::endl;
+  std::cout << "Using dataset '" << argv[2] << "'" << std::endl;
 
   ros::init(argc, argv, "test_node");
   ros::NodeHandle nh;
@@ -419,13 +420,13 @@ int main(int argc, char **argv)
 
   gtsam::Pose3 T_imu_mocap;
   ros::Subscriber extPosSub;
-  if (strcmp(argv[1], "leica") == 0)
+  if (strcmp(argv[2], "leica") == 0)
   {
     /// EUROC MACHINE HALL
     T_imu_mocap = gtsam::Pose3(rot_IL, trans_IL);
     extPosSub = nh.subscribe<geometry_msgs::PointStamped>("/leica/position", 100, leicaCallback);
   }
-  else if (strcmp(argv[1], "vicon") == 0)
+  else if (strcmp(argv[2], "vicon") == 0)
   {
     /// EUROC VICON ROOM
     T_imu_mocap = gtsam::Pose3(rot_IV, trans_IV);
@@ -444,17 +445,25 @@ int main(int argc, char **argv)
   ros::Subscriber imgSub = nh.subscribe<sensor_msgs::Image>("/cam0/image_raw", 10, imgCallback);
 
   std::cout << "Using backend type: '";
-  switch (backend_type)
+  if (strcmp(argv[1], "lm") == 0)
   {
-  case BackendType::LM:
     std::cout << "Levenberg-Marquardt";
-    break;
-  case BackendType::ISAM:
+    backend_type = BackendType::LM;
+  }
+  else if (strcmp(argv[1], "isam") == 0)
+  {
     std::cout << "iSAM2";
-    break;
-  case BackendType::IFL:
+    backend_type = BackendType::ISAM;
+  }
+  else if (strcmp(argv[1], "ifl") == 0)
+  {
     std::cout << "Incremental fixed lag";
-    break;
+    backend_type = BackendType::IFL;
+  }
+  else
+  {
+    ROS_WARN_STREAM("Unknown backend type '" << argv[1] << "'. Only allowed with 'lm', 'isam', or 'ifl' (case sensitive).");
+    return 1;
   }
   std::cout << "'" << std::endl;
   std::cout << "INITIALIZED AND READY." << std::endl;
