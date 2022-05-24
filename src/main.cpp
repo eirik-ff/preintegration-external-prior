@@ -33,6 +33,7 @@ constexpr struct {
     bool graph = false;
     bool optim = true;
     bool result = true;
+    bool cov = false;
 } verbosity;
 
 enum class BackendType
@@ -261,7 +262,8 @@ void processExtPose(double timestamp, const gtsam::Point3 *ext_pos, const gtsam:
     gtsam::LevenbergMarquardtOptimizer optimizer(graph, initial, param);
     gtsam::Values result = optimizer.optimize();
     // gtsam::Marginals marginals(graph, result);
-    marginals = std::make_shared<gtsam::Marginals>(graph, result);
+    if (verbosity.cov)
+      marginals = std::make_shared<gtsam::Marginals>(graph, result);
     std::cout << std::endl;
     initial.update(result);
 
