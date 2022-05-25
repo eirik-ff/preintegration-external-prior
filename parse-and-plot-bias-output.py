@@ -4,6 +4,7 @@ import sys
 import numpy as np
 import matplotlib.pyplot as plt
 import seaborn as sns
+import pandas as pd
 
 import argparse
 
@@ -32,6 +33,36 @@ class Data:
         return self.ypr * 180 / np.pi
 
 
+def rmse(gt_time, gt_data, est_time, est_data):
+    """
+    gt_time: Nx1 array
+    gt_data: Nx3 array 
+    est_time: Nx1
+    est_data: Nx3
+    """
+    gt = pd.DataFrame()
+    gt["time"] = gt_time
+    gt["gt_x"] = gt_data[:, 0]
+    gt["gt_y"] = gt_data[:, 1]
+    gt["gt_z"] = gt_data[:, 2]
+
+    est = pd.DataFrame()
+    est["time"] = est_time
+    est["est_x"] = est_data[:, 0]
+    est["est_y"] = est_data[:, 1]
+    est["est_z"] = est_data[:, 2]
+
+    merged = pd.merge_asof(est, gt, on="time", direction="nearest")
+    
+    err_x = merged["est_x"] - merged["gt_x"]
+    err_y = merged["est_y"] - merged["gt_y"]
+    err_z = merged["est_z"] - merged["gt_z"]
+
+    rmse_x = np.sqrt(np.sum(err_x.to_numpy() ** 2) / err_x.size)
+    rmse_y = np.sqrt(np.sum(err_y.to_numpy() ** 2) / err_y.size)
+    rmse_z = np.sqrt(np.sum(err_z.to_numpy() ** 2) / err_z.size)
+
+    return np.array([rmse_x, rmse_y, rmse_z])
 
 
 parser = argparse.ArgumentParser()
@@ -92,6 +123,8 @@ if args.gt:
     gt.ypr = gt.ypr_from_quat(R_imu_mocap)
     gt.time /= 1e9
 
+    print("gt", gt.time.shape)
+
 
 filename = args.data
 with open(filename, "r") as f:
@@ -134,6 +167,7 @@ else:
     quat = None
 
 data = Data(time, pos, b_a, b_g, ypr=ypr, quat=quat)
+print("data", data.time.shape)
 
 if args.dataset.startswith("leica"):
     # this is to make the plot nicer since we're using ypr
@@ -147,6 +181,27 @@ if args.dataset.startswith("leica"):
 elif args.dataset == "vicon":
     # fix alignment that isn't good for some reason
     data.ypr[:, 2] -= data.ypr[0, 2] - gt.ypr[0, 2]
+
+
+# rmse
+pos_rmse = rmse(gt.time, gt.pos, data.time, data.pos)
+ypr_rmse = rmse(gt.time, gt.ypr, data.time, data.ypr) * 180/np.pi
+b_a_rmse = rmse(gt.time, gt.bias_acc, data.time, data.bias_acc)
+b_g_rmse = rmse(gt.time, gt.bias_gyr, data.time, data.bias_gyr)
+if args.dataset == "leica_skip40":
+    b_a_rmse_cut25 = rmse(gt.time[gt.time > 25], gt.bias_acc[gt.time > 25], data.time[data.time > 25], data.bias_acc[data.time > 25])
+    b_g_rmse_cut25 = rmse(gt.time[gt.time > 25], gt.bias_gyr[gt.time > 25], data.time[data.time > 25], data.bias_gyr[data.time > 25])
+
+pos_rmse_str = '\t'.join(f"{d:.4f}" for d in pos_rmse)
+ypr_rmse_str = '\t'.join(f"{d:.4f}" for d in ypr_rmse)
+b_a_rmse_str = '\t'.join(f"{d:.4f}" for d in b_a_rmse)
+b_g_rmse_str = '\t'.join(f"{d:.4f}" for d in b_g_rmse)
+print(f"RMSE: '{args.dataset}'\n pos [m]     = {pos_rmse_str}\n ypr [deg]   = {ypr_rmse_str}\n b_a [m/s^2] = {b_a_rmse_str}\n b_g [rad/s] = {b_g_rmse_str}")
+
+if args.dataset == "leica_skip40":
+    b_a_rmse_cut25_str = '\t'.join(f"{d:.4f}" for d in b_a_rmse_cut25)
+    b_g_rmse_cut25_str = '\t'.join(f"{d:.4f}" for d in b_g_rmse_cut25)
+    print(f" b_a_cut25 [m/s^2] = {b_a_rmse_cut25_str}\n b_g_cut25 [rad/s] = {b_g_rmse_cut25_str}")
 
 
 # plot 
@@ -273,6 +328,7 @@ if args.dataset.startswith("leica"):
     plt.plot(data.time, np.mean(data.bias_acc[:, 0]) * np.ones_like(data.time), "k--")
     if args.dataset == "leica_skip40":
         plt.ylim([-0.4, 0.3])  # for leica skip40
+        plt.plot(data.time[data.time > 25], np.mean(data.bias_acc[data.time > 25, 0]) * np.ones_like(data.time[data.time > 25]), "m--")
     else:
         plt.ylim([-0.25, 0.2])  # for leica full
     ax.set_xticklabels([])
@@ -280,9 +336,9 @@ if args.dataset.startswith("leica"):
     ax = plt.subplot(3, 1, 2)
     plt.plot(gt.time, gt.bias_acc[:, 1], "g")
     plt.plot(data.time, data.bias_acc[:, 1], "b")
-    plt.plot(data.time, np.mean(data.bias_acc[:, 1]) * np.ones_like(data.time), "k--")
     if args.dataset == "leica_skip40":
         plt.ylim([-0.3, 0.5])  # for leica skip40
+        plt.plot(data.time[data.time > 25], np.mean(data.bias_acc[data.time > 25, 1]) * np.ones_like(data.time[data.time > 25]), "m--")
     else:
         plt.ylim([-0.2, 0.5])  # for leica full
     ax.set_xticklabels([])
@@ -290,9 +346,9 @@ if args.dataset.startswith("leica"):
     ax = plt.subplot(3, 1, 3)
     plt.plot(gt.time, gt.bias_acc[:, 2], "g")
     plt.plot(data.time, data.bias_acc[:, 2], "b")
-    plt.plot(data.time, np.mean(data.bias_acc[:, 2]) * np.ones_like(data.time), "k--")
     if args.dataset == "leica_skip40":
         plt.ylim([-0.7, 0.3])  # for leica skip40
+        plt.plot(data.time[data.time > 25], np.mean(data.bias_acc[data.time > 25, 2]) * np.ones_like(data.time[data.time > 25]), "m--")
     else:
         plt.ylim([-0.4, 0.5])  # for leica full
     plt.ylabel("z [m/s^2]")
