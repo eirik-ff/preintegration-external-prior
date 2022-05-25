@@ -170,6 +170,7 @@ plt.plot(data.time, data.pos[:, 2], "b")
 plt.ylabel("z [m]")
 plt.xlabel("time [sec]")
 plt.tight_layout()
+plt.savefig("figures/" + args.dataset + "_pos.png", dpi=320)
 
 plt.figure()
 ax = plt.subplot(3, 1, 1)
@@ -189,6 +190,7 @@ plt.plot(data.time, data.ypr_as_deg()[:, 0], "b")
 plt.ylabel("yaw [deg]")
 plt.xlabel("time [sec]")
 plt.tight_layout()
+plt.savefig("figures/" + args.dataset + "_ori.png", dpi=320)
 
 if args.quat:
     plt.figure()
@@ -214,44 +216,53 @@ if args.quat:
     plt.ylabel("w")
     plt.xlabel("time [sec]")
     plt.tight_layout()
+    plt.savefig("figures/" + args.dataset + "_quat.png", dpi=320)
 
 plt.figure()
 ax = plt.subplot(3, 1, 1)
 plt.title("Bias accelerometer")
 plt.plot(gt.time, gt.bias_acc[:, 0], "g")
 plt.plot(data.time, data.bias_acc[:, 0], "b")
+plt.plot(data.time, np.mean(data.bias_acc[:, 0]) * np.ones_like(data.time), "k--")
 ax.set_xticklabels([])
 plt.ylabel("x [m/s^2]")
 ax = plt.subplot(3, 1, 2)
 plt.plot(gt.time, gt.bias_acc[:, 1], "g")
 plt.plot(data.time, data.bias_acc[:, 1], "b")
+plt.plot(data.time, np.mean(data.bias_acc[:, 1]) * np.ones_like(data.time), "k--")
 ax.set_xticklabels([])
 plt.ylabel("y [m/s^2]")
 ax = plt.subplot(3, 1, 3)
 plt.plot(gt.time, gt.bias_acc[:, 2], "g")
 plt.plot(data.time, data.bias_acc[:, 2], "b")
+plt.plot(data.time, np.mean(data.bias_acc[:, 2]) * np.ones_like(data.time), "k--")
 plt.ylabel("z [m/s^2]")
 plt.xlabel("time [sec]")
 plt.tight_layout()
+plt.savefig("figures/" + args.dataset + "_bias_accel.png", dpi=320)
 
 plt.figure()
 ax = plt.subplot(3, 1, 1)
 plt.title("Bias gyroscope")
 plt.plot(gt.time, gt.bias_gyr[:, 0], "g")
 plt.plot(data.time, data.bias_gyr[:, 0], "b")
+plt.plot(data.time, np.mean(data.bias_gyr[:, 0]) * np.ones_like(data.time), "k--")
 ax.set_xticklabels([])
 plt.ylabel("x [rad/s]")
 ax = plt.subplot(3, 1, 2)
 plt.plot(gt.time, gt.bias_gyr[:, 1], "g")
 plt.plot(data.time, data.bias_gyr[:, 1], "b")
+plt.plot(data.time, np.mean(data.bias_gyr[:, 1]) * np.ones_like(data.time), "k--")
 ax.set_xticklabels([])
 plt.ylabel("y [rad/s]")
 ax = plt.subplot(3, 1, 3)
 plt.plot(gt.time, gt.bias_gyr[:, 2], "g")
 plt.plot(data.time, data.bias_gyr[:, 2], "b")
+plt.plot(data.time, np.mean(data.bias_gyr[:, 2]) * np.ones_like(data.time), "k--")
 plt.ylabel("z [rad/s]")
 plt.xlabel("time [sec]")
 plt.tight_layout()
+plt.savefig("figures/" + args.dataset + "_bias_gyro.png", dpi=320)
 
 if args.dataset.startswith("leica"):
     plt.figure()
@@ -259,6 +270,7 @@ if args.dataset.startswith("leica"):
     plt.title("Bias accelerometer zoomed in")
     plt.plot(gt.time, gt.bias_acc[:, 0], "g")
     plt.plot(data.time, data.bias_acc[:, 0], "b")
+    plt.plot(data.time, np.mean(data.bias_acc[:, 0]) * np.ones_like(data.time), "k--")
     if args.dataset == "leica_skip40":
         plt.ylim([-0.4, 0.3])  # for leica skip40
     else:
@@ -268,6 +280,7 @@ if args.dataset.startswith("leica"):
     ax = plt.subplot(3, 1, 2)
     plt.plot(gt.time, gt.bias_acc[:, 1], "g")
     plt.plot(data.time, data.bias_acc[:, 1], "b")
+    plt.plot(data.time, np.mean(data.bias_acc[:, 1]) * np.ones_like(data.time), "k--")
     if args.dataset == "leica_skip40":
         plt.ylim([-0.3, 0.5])  # for leica skip40
     else:
@@ -277,13 +290,15 @@ if args.dataset.startswith("leica"):
     ax = plt.subplot(3, 1, 3)
     plt.plot(gt.time, gt.bias_acc[:, 2], "g")
     plt.plot(data.time, data.bias_acc[:, 2], "b")
+    plt.plot(data.time, np.mean(data.bias_acc[:, 2]) * np.ones_like(data.time), "k--")
     if args.dataset == "leica_skip40":
-        plt.ylim([-0.3, 0.3])  # for leica skip40
+        plt.ylim([-0.7, 0.3])  # for leica skip40
     else:
         plt.ylim([-0.4, 0.5])  # for leica full
     plt.ylabel("z [m/s^2]")
     plt.xlabel("time [sec]")
     plt.tight_layout()
+    plt.savefig("figures/" + args.dataset + "_bias_accel_zoom.png", dpi=320)
 
 #plt.tight_layout()
 plt.show()
