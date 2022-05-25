@@ -28,6 +28,9 @@ class Data:
             ypr =  Rot.from_quat(self.quat) * R_imu_mocap
             return ypr.as_euler("ZYX")
 
+    def ypr_as_deg(self) -> np.ndarray:
+        return self.ypr * 180 / np.pi
+
 
 
 
@@ -141,6 +144,10 @@ if args.dataset.startswith("leica"):
     ])
     data.ypr = (Rot.from_euler("ZYX", data.ypr) * R_leica).as_euler("ZYX")
     gt.ypr = (Rot.from_euler("ZYX", gt.ypr) * R_leica).as_euler("ZYX")
+elif args.dataset == "vicon":
+    # fix alignment that isn't good for some reason
+    data.ypr[:, 2] -= data.ypr[0, 2] - gt.ypr[0, 2]
+
 
 # plot 
 sns.set()
@@ -167,19 +174,19 @@ plt.tight_layout()
 plt.figure()
 ax = plt.subplot(3, 1, 1)
 plt.title("Roll, pitch, yaw")
-plt.plot(gt.time, gt.ypr[:, 2], "g")
-plt.plot(data.time, data.ypr[:, 2], "b")
+plt.plot(gt.time, gt.ypr_as_deg()[:, 2], "g")
+plt.plot(data.time, data.ypr_as_deg()[:, 2], "b")
 ax.set_xticklabels([])
-plt.ylabel("roll [rad]")
+plt.ylabel("roll [deg]")
 ax = plt.subplot(3, 1, 2)
-plt.plot(gt.time, gt.ypr[:, 1], "g")
-plt.plot(data.time, data.ypr[:, 1], "b")
+plt.plot(gt.time, gt.ypr_as_deg()[:, 1], "g")
+plt.plot(data.time, data.ypr_as_deg()[:, 1], "b")
 ax.set_xticklabels([])
-plt.ylabel("pitch [rad]")
+plt.ylabel("pitch [deg]")
 ax = plt.subplot(3, 1, 3)
-plt.plot(gt.time, gt.ypr[:, 0], "g")
-plt.plot(data.time, data.ypr[:, 0], "b")
-plt.ylabel("yaw [rad]")
+plt.plot(gt.time, gt.ypr_as_deg()[:, 0], "g")
+plt.plot(data.time, data.ypr_as_deg()[:, 0], "b")
+plt.ylabel("yaw [deg]")
 plt.xlabel("time [sec]")
 plt.tight_layout()
 
