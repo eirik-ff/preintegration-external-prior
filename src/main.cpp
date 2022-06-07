@@ -70,6 +70,8 @@ gtsam::Point3 prev_ext_pos;
 
 int ext_count = 0;
 
+gtsam::Pose3 T_IV;
+
 void imgCallback(const sensor_msgs::Image::ConstPtr msg)
 {
   cv_bridge::CvImageConstPtr cv_ptr;
@@ -144,7 +146,13 @@ void processExtPose(double timestamp, const gtsam::Point3 *ext_pos, const gtsam:
 
     // zero priors for velocity and bias
     gtsam::Vector3 prior_vel;
-    gtsam::imuBias::ConstantBias prior_bias;
+    gtsam::imuBias::ConstantBias prior_bias(gtsam::Vector3(-0.012492,0.547666,0.069073),gtsam::Vector3(0.002229,0.020700,0.076350));
+    // gtsam::imuBias::ConstantBias prior_bias;
+
+    auto init_prior_ext_pose_noise = gtsam::noiseModel::Isotropic::Sigmas(
+        (gtsam::Vector(6) << 1e-2, 1e-2, 1e-2, 1e-3, 1e-3, 1e-3).finished() // rad, rad, rad, m, m, m
+    );
+
 
     if (ext_rot)
     {
@@ -152,7 +160,7 @@ void processExtPose(double timestamp, const gtsam::Point3 *ext_pos, const gtsam:
 
       // IMPORTANT to add initial priors on velocity and bias to make the problem
       // well constrained and not run into indeterminant linear system exceptions.
-      graph.addPrior(X(ext_count), prior, ext_pose_noise);
+      graph.addPrior(X(ext_count), prior, init_prior_ext_pose_noise);
       graph.addPrior(V(ext_count), prior_vel, velocity_noise_model);
       graph.addPrior(B(ext_count), prior_bias, bias_noise_model);
 
@@ -163,7 +171,7 @@ void processExtPose(double timestamp, const gtsam::Point3 *ext_pos, const gtsam:
     {
       // Need full pose prior on first variable
       gtsam::Pose3 prior(gtsam::Rot3::identity(), *ext_pos);
-      graph.addPrior(X(ext_count), prior, ext_pose_noise);
+      graph.addPrior(X(ext_count), prior, init_prior_ext_pose_noise);
 
       graph.addPrior(V(ext_count), prior_vel, velocity_noise_model);
       graph.addPrior(B(ext_count), prior_bias, bias_noise_model);
@@ -279,6 +287,12 @@ void processExtPose(double timestamp, const gtsam::Point3 *ext_pos, const gtsam:
     graph.resize(0);
     initial.clear();
 
+    if (verbosity.cov)
+    {
+      gtsam::Values result = isam.calculateEstimate();
+      marginals = std::make_shared<gtsam::Marginals>(isam.getFactorsUnsafe(), result);
+    }
+
     gtsam::Pose3 x = isam.calculateEstimate<gtsam::Pose3>(X(ext_count));
     gtsam::Vector3 v = isam.calculateEstimate<gtsam::Vector3>(V(ext_count));
     gtsam::imuBias::ConstantBias b = isam.calculateEstimate<gtsam::imuBias::ConstantBias>(B(ext_count));
@@ -373,7 +387,14 @@ void viconCallback(const geometry_msgs::TransformStamped::ConstPtr msg)
     gtsam::Rot3 ext_rot(quat);
     gtsam::Point3 ext_pos(msg->transform.translation.x, msg->transform.translation.y, msg->transform.translation.z);
 
+    // If we want to integrate in IMU frame we want external prior to be of T_WI, not T_WV.
+    gtsam::Pose3 T_WV(ext_rot, ext_pos);
+    T_WV = T_WV * T_IV.inverse();
+    ext_rot = T_WV.rotation();
+    ext_pos = T_WV.translation();
+
     processExtPose(timestamp, &ext_pos, &ext_rot);
+    // processExtPose(timestamp, &ext_pos, nullptr);
   }
 }
 
@@ -392,7 +413,7 @@ int main(int argc, char **argv)
 
   // auto p = boost::make_shared<gtsam::PreintegrationCombinedParams>(gtsam::Vector3(0, 0, -9.81));
   // auto p = gtsam::PreintegrationCombinedParams::MakeSharedU(9.8082);
-  auto p = gtsam::PreintegrationCombinedParams::MakeSharedU(9.77965);
+  auto p = gtsam::PreintegrationCombinedParams::MakeSharedU(9.77908138698947);
   // FROM SVO EUROC PARAMETER FILE
   // p->accelerometerCovariance = gtsam::I_3x3 * 0.008 * 0.008;
   // p->gyroscopeCovariance = gtsam::I_3x3 * 0.0012 * 0.0012;
@@ -419,6 +440,7 @@ int main(int argc, char **argv)
                  -0.02078, -0.99972, -0.01114,
                   0.94150, -0.01582, -0.33665);
   gtsam::Point3 trans_IV(0.06901, -0.02781, -0.12395);
+  T_IV = gtsam::Pose3(rot_IV, trans_IV);
 
   gtsam::Pose3 T_imu_mocap;
   ros::Subscriber extPosSub;
@@ -440,7 +462,7 @@ int main(int argc, char **argv)
     return 1;
   }
 
-  p->body_P_sensor = T_imu_mocap.inverse();
+  // p->body_P_sensor = T_imu_mocap.inverse();
   preint = std::make_shared<gtsam::PreintegratedCombinedMeasurements>(p);
 
   ros::Subscriber imuSub = nh.subscribe<sensor_msgs::Imu>("/imu0", 100, imuCallback);
